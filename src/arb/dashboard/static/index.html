@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalshi &lt;-&gt; Polymarket divergence scanner</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #12151c; --panel-2: #0e1117; --border: #232733;
+    --text: #e7e9ee; --muted: #8b91a1; --green: #34d399; --red: #f87171; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 20px 16px 64px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 19px; margin: 0; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 6px; }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .controls label { color: var(--muted); font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+  .controls input[type=number] { width: 60px; background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 4px 6px; font-size: 12.5px; }
+  button#refresh { background: var(--accent); color: #06111f; border: none; border-radius: 8px;
+    padding: 9px 16px; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  button#refresh:disabled { opacity: .6; cursor: default; }
+  button#refresh .spinner { display: none; }
+  button#refresh.loading .spinner { display: inline-block; }
+  button#refresh.loading .label { display: none; }
+  .spinner { width: 13px; height: 13px; border: 2px solid rgba(6,17,31,.35); border-top-color: #06111f;
+    border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #banner { display: none; background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.4);
+    color: var(--red); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  #banner.show { display: block; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 1560px; }
+  thead th { position: sticky; top: 0; background: var(--panel-2); text-align: left; font-weight: 600;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
+    padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none; }
+  thead th:hover { color: var(--text); }
+  thead th.sorted::after { content: " \25BE"; }
+  thead th.sorted.asc::after { content: " \25B4"; }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 13px; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,.02); }
+  .market-title { font-weight: 600; color: var(--text); text-decoration: none; }
+  .market-title:hover { color: var(--accent); }
+  .market-meta { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .market-link { color: var(--accent); text-decoration: none; font-size: 11.5px; }
+  .market-link:hover { text-decoration: underline; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .diff-pos { color: var(--green); font-weight: 700; }
+  .diff-neg { color: var(--red); font-weight: 700; }
+  .gap-cell { white-space: nowrap; }
+  .gap-side { color: var(--muted); font-size: 11px; display: block; }
+  .sim-bar-wrap { display: flex; align-items: center; gap: 6px; }
+  .sim-bar { width: 46px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .sim-bar-fill { height: 100%; background: var(--accent); }
+  .rank-cell { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .empty, .loading-state { color: var(--muted); text-align: center; padding: 48px 0; font-size: 14px; }
+  .footer { color: var(--muted); font-size: 12px; margin-top: 20px; }
+
+  .tabs { display: flex; gap: 4px; margin: 14px 0 16px; border-bottom: 1px solid var(--border); }
+  .tab-btn { background: none; border: none; color: var(--muted); font: inherit; font-size: 13.5px;
+    font-weight: 600; padding: 8px 4px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .class-badge { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .02em; white-space: nowrap; }
+  .class-true_arbitrage { background: rgba(52,211,153,.15); color: var(--green); }
+  .class-capital_preserving_hedge { background: rgba(96,165,250,.15); color: var(--accent); }
+  .class-conditional_arbitrage { background: rgba(250,204,21,.15); color: #facc15; }
+  .class-price_discrepancy { background: rgba(139,145,161,.15); color: var(--muted); }
+  .class-rejected_match { background: rgba(248,113,113,.15); color: var(--red); }
+  .class-manual_verification_required { background: rgba(248,113,113,.1); color: #fb923c; }
+
+  .opp-row { cursor: pointer; }
+  .opp-detail td { background: var(--panel-2); padding: 18px 20px; }
+  .worst-case-pnl { font-size: 26px; font-weight: 800; margin: 2px 0 10px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px 20px;
+    margin-bottom: 16px; }
+  .detail-stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .detail-stat .value { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .positions-list { margin: 0 0 16px; padding-left: 18px; }
+  .positions-list li { margin-bottom: 4px; }
+  .payoff-table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  .payoff-table th, .payoff-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; font-size: 12.5px; }
+  .payoff-table th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 10.5px; }
+  .payoff-table tr.worst-row td { background: rgba(248,113,113,.08); }
+  .holes-note { color: var(--red); font-size: 12.5px; margin-top: 10px; }
+  .reject-note { color: var(--red); font-size: 13px; }
+  .select-ctl { background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Kalshi &lt;-&gt; Polymarket arbitrage scanner</h1>
+      <div class="sub" id="summary">Loading...</div>
+    </div>
+    <button id="refresh">
+      <span class="label">&#8635; Refresh (re-scan both platforms)</span>
+      <span class="spinner"></span>
+    </button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="discovery">Discovery</button>
+    <button class="tab-btn" data-tab="opportunities">Opportunities</button>
+  </div>
+
+  <div id="discoveryTab" class="tab-panel active">
+    <div class="controls">
+      <label>min similarity <input type="number" id="minSim" min="0" max="1" step="0.05" value="0.5"></label>
+      <label>max pairs <input type="number" id="maxPairs" min="1" max="2000" step="1" value="500"></label>
+    </div>
+
+    <div id="banner"></div>
+    <div id="content"><div class="loading-state">Scanning live markets on Kalshi and Polymarket...</div></div>
+
+    <div class="footer">
+      Each row is a Kalshi market matched to the Polymarket market judged most likely to be the <em>same</em>
+      market (raise "min similarity" for stricter matches, lower it to see more candidates). YES gap and NO gap
+      are computed independently: YES gap is Kalshi's YES price minus Polymarket's YES price; NO gap is Kalshi's
+      NO price (1 &minus; YES, since Kalshi has no separate NO market) minus Polymarket's own NO price (a
+      separately traded outcome on Polymarket, not just 1 &minus; YES). A positive gap means Kalshi is priced
+      higher on that side. Matching is a lightweight text-similarity heuristic (see
+      <code>arb/matching/discover.py</code>), not verified resolution-criteria matching -- click through and
+      read both markets before treating any row as a real pair. This page shows data only; it does not compute
+      fees, size trades, or place orders.
+    </div>
+  </div>
+
+  <div id="opportunitiesTab" class="tab-panel">
+    <div class="controls">
+      <label>show <select id="oppClassFilter" class="select-ctl">
+        <option value="true_arbitrage">True arbitrage only</option>
+        <option value="true_arbitrage,capital_preserving_hedge">+ Capital-preserving hedges</option>
+        <option value="true_arbitrage,capital_preserving_hedge,conditional_arbitrage">+ Conditional arbitrage</option>
+        <option value="all">Everything (incl. rejected / price discrepancy)</option>
+      </select></label>
+      <label>max candidates <input type="number" id="oppMaxCandidates" min="1" max="50" step="1" value="10"></label>
+      <label>min similarity <input type="number" id="oppMinSim" min="0" max="1" step="0.05" value="0.6"></label>
+      <label>capital limit $<input type="number" id="oppCapitalLimit" min="100" max="1000000" step="100" value="10000"></label>
+      <button id="oppRefresh">
+        <span class="label">&#8635; Scan for opportunities</span>
+        <span class="spinner"></span>
+      </button>
+    </div>
+    <div class="sub" style="margin-bottom:12px;">
+      Each scan runs several real LLM calls per candidate (rule extraction, world-state proposal, hole detection)
+      -- this is deliberately slower than the Discovery tab's refresh and bounded to "max candidates" pairs, not
+      the whole market. Only <strong>TRUE ARBITRAGE</strong> is shown by default; use "show" to reveal weaker
+      classifications. Click a row to see the full payoff matrix and recommended trade.
+    </div>
+
+    <div id="oppBanner"></div>
+    <div id="oppContent"><div class="empty">Click "Scan for opportunities" to run the verification engine against the top matched pairs.</div></div>
+
+    <div class="footer">
+      Every number here comes from a live re-fetch of both order books, a fresh LLM-proposed set of resolution
+      states (plus an adversarial hole-detector pass), and a linear-programming stake optimizer -- nothing is
+      cached from a previous scan. "Worst-Case P&amp;L" is the guaranteed profit across <em>every</em> identified
+      resolution state; if it's negative by even a cent, the pair is never labeled TRUE ARBITRAGE. See
+      <code>arb/arbitrage/</code> for the full engine.
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const contentEl = document.getElementById("content");
+  const summaryEl = document.getElementById("summary");
+  const bannerEl = document.getElementById("banner");
+  const refreshBtn = document.getElementById("refresh");
+  const minSimEl = document.getElementById("minSim");
+  const maxPairsEl = document.getElementById("maxPairs");
+
+  let lastPairs = [];
+  let sortKey = "rank_score";
+  let sortAsc = false;
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+  function money(v) {
+    return v == null ? "-" : "$" + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+  function cents(v) {
+    return v == null ? "-" : v.toFixed(1) + "c";
+  }
+  function pct(v) {
+    return v == null ? "-" : Math.round(v * 100) + "%";
+  }
+
+  const COLUMNS = [
+    { key: "rank_score", label: "#", type: "rank" },
+    { key: "kalshi_title", label: "Kalshi market", type: "kalshi" },
+    { key: "kalshi_yes", label: "K YES", type: "num" },
+    { key: "kalshi_no", label: "K NO", type: "num" },
+    { key: "kalshi_vol", label: "K vol 24h", type: "num" },
+    { key: "kalshi_vol_total", label: "K vol total", type: "num" },
+    { key: "poly_title", label: "Polymarket market", type: "poly" },
+    { key: "poly_yes", label: "P YES", type: "num" },
+    { key: "poly_no", label: "P NO", type: "num" },
+    { key: "poly_vol", label: "P vol 24h", type: "num" },
+    { key: "poly_vol_total", label: "P vol total", type: "num" },
+    { key: "yes_gap_abs_cents", label: "YES gap", type: "diff" },
+    { key: "no_gap_abs_cents", label: "NO gap", type: "diff" },
+    { key: "similarity", label: "Match", type: "sim" },
+  ];
+
+  function sortValue(pair, key) {
+    switch (key) {
+      case "kalshi_title": return pair.kalshi.title.toLowerCase();
+      case "kalshi_yes": return pair.kalshi.yes_price_cents;
+      case "kalshi_no": return pair.kalshi.no_price_cents;
+      case "kalshi_vol": return pair.kalshi.volume_24h_dollars;
+      case "kalshi_vol_total": return pair.kalshi.volume_total_dollars;
+      case "poly_title": return pair.polymarket.question.toLowerCase();
+      case "poly_yes": return pair.polymarket.yes_price_cents;
+      case "poly_no": return pair.polymarket.no_price_cents;
+      case "poly_vol": return pair.polymarket.volume_24h_dollars;
+      case "poly_vol_total": return pair.polymarket.volume_total_dollars;
+      default: return pair[key];
+    }
+  }
+
+  function gapCell(gapCents, absCents, sideLabel) {
+    if (gapCents == null) return `<td class="num gap-cell">-</td>`;
+    const cls = gapCents > 0 ? "diff-pos" : (gapCents < 0 ? "diff-neg" : "");
+    const who = gapCents > 0 ? "K higher" : (gapCents < 0 ? "P higher" : "even");
+    return `<td class="num gap-cell ${cls}">${cents(absCents)}<span class="gap-side">${who} &middot; ${sideLabel}</span></td>`;
+  }
+
+  function rowHtml(pair, rank) {
+    return `
+      <tr>
+        <td class="rank-cell num">${rank}</td>
+        <td>
+          <a class="market-title" href="${esc(pair.kalshi.url)}" target="_blank" rel="noopener">${esc(pair.kalshi.title)}</a>
+          <div class="market-meta">${esc(pair.kalshi.category || "-")} &middot; <code>${esc(pair.kalshi.ticker)}</code></div>
+        </td>
+        <td class="num">${cents(pair.kalshi.yes_price_cents)}</td>
+        <td class="num">${cents(pair.kalshi.no_price_cents)}</td>
+        <td class="num">${money(pair.kalshi.volume_24h_dollars)}</td>
+        <td class="num">${money(pair.kalshi.volume_total_dollars)}</td>
+        <td>
+          <a class="market-title" href="${esc(pair.polymarket.url)}" target="_blank" rel="noopener">${esc(pair.polymarket.question)}</a>
+          <div class="market-meta">YES: ${esc(pair.polymarket.yes_label)} &middot; NO: ${esc(pair.polymarket.no_label || "-")}</div>
+        </td>
+        <td class="num">${cents(pair.polymarket.yes_price_cents)}</td>
+        <td class="num">${cents(pair.polymarket.no_price_cents)}</td>
+        <td class="num">${money(pair.polymarket.volume_24h_dollars)}</td>
+        <td class="num">${money(pair.polymarket.volume_total_dollars)}</td>
+        ${gapCell(pair.yes_gap_cents, pair.yes_gap_abs_cents, "YES")}
+        ${gapCell(pair.no_gap_cents, pair.no_gap_abs_cents, "NO")}
+        <td>
+          <div class="sim-bar-wrap">
+            <div class="sim-bar"><div class="sim-bar-fill" style="width:${Math.round(pair.similarity * 100)}%"></div></div>
+            <span class="num">${pct(pair.similarity)}</span>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  function renderTable() {
+    if (!lastPairs.length) {
+      contentEl.innerHTML = '<div class="empty">No candidate pairs matched at this similarity threshold. Try lowering "min similarity" and refreshing.</div>';
+      return;
+    }
+    const sorted = lastPairs.slice().sort((a, b) => {
+      const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = av < bv ? -1 : (av > bv ? 1 : 0);
+      return sortAsc ? cmp : -cmp;
+    });
+    const headHtml = COLUMNS.map(c => {
+      const isSorted = c.key === sortKey;
+      return `<th data-key="${c.key}" class="${isSorted ? "sorted" : ""} ${isSorted && sortAsc ? "asc" : ""}">${esc(c.label)}</th>`;
+    }).join("");
+    const bodyHtml = sorted.map((p, i) => rowHtml(p, i + 1)).join("");
+    contentEl.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>${headHtml}</tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>`;
+    contentEl.querySelectorAll("thead th").forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.key;
+        if (sortKey === key) { sortAsc = !sortAsc; } else { sortKey = key; sortAsc = false; }
+        renderTable();
+      });
+    });
+  }
+
+  function render(payload) {
+    lastPairs = payload.pairs || [];
+    summaryEl.textContent = `scanned ${payload.kalshi_scanned} Kalshi + ${payload.polymarket_scanned} Polymarket markets `
+      + `· ${payload.count} candidate pair(s) matched · generated ${new Date(payload.generated_at).toLocaleTimeString()}`;
+    renderTable();
+  }
+
+  async function refresh() {
+    refreshBtn.classList.add("loading");
+    refreshBtn.disabled = true;
+    bannerEl.classList.remove("show");
+    try {
+      const params = new URLSearchParams({
+        min_similarity: minSimEl.value || "0.5",
+        max_pairs: maxPairsEl.value || "500",
+      });
+      const res = await fetch("/api/candidates?" + params.toString(), { cache: "no-store" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || ("HTTP " + res.status));
+      if (payload.error) throw new Error(payload.error);
+      render(payload);
+    } catch (err) {
+      bannerEl.textContent = "Refresh failed: " + err.message;
+      bannerEl.classList.add("show");
+    } finally {
+      refreshBtn.classList.remove("loading");
+      refreshBtn.disabled = false;
+    }
+  }
+
+  refreshBtn.addEventListener("click", refresh);
+  refresh();
+
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(btn.dataset.tab + "Tab").classList.add("active");
+    });
+  });
+})();
+</script>
+<script>
+(function () {
+  const contentEl = document.getElementById("oppContent");
+  const bannerEl = document.getElementById("oppBanner");
+  const refreshBtn = document.getElementById("oppRefresh");
+  const classFilterEl = document.getElementById("oppClassFilter");
+  const maxCandidatesEl = document.getElementById("oppMaxCandidates");
+  const minSimEl = document.getElementById("oppMinSim");
+  const capitalLimitEl = document.getElementById("oppCapitalLimit");
+
+  let lastOpps = [];
+  let sortKey = "guaranteed_profit_dollars";
+  let sortAsc = false;
+  let openIndex = null;
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+  function money(v) {
+    return v == null ? "-" : "$" + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  function pct(v) {
+    return v == null ? "-" : v.toFixed(2) + "%";
+  }
+  function classLabel(c) {
+    return c.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+  }
+
+  const COLUMNS = [
+    { key: "classification", label: "Classification" },
+    { key: "markets", label: "Markets" },
+    { key: "capital_required_dollars", label: "Capital" },
+    { key: "guaranteed_profit_dollars", label: "Guaranteed Profit" },
+    { key: "guaranteed_roi_pct", label: "ROI" },
+    { key: "max_profitable_shares", label: "Max Size" },
+    { key: "confidence", label: "Confidence" },
+    { key: "verified_at", label: "Updated" },
+  ];
+
+  function sortValue(o, key) {
+    if (key === "markets") return (o.contract_a.label + o.contract_b.label).toLowerCase();
+    return o[key];
+  }
+
+  function rowHtml(o, idx) {
+    const profitClass = o.guaranteed_profit_dollars > 0 ? "diff-pos" : (o.guaranteed_profit_dollars < 0 ? "diff-neg" : "");
+    const updated = new Date(o.verified_at);
+    const secsAgo = Math.max(0, Math.round((Date.now() - updated.getTime()) / 1000));
+    const rows = [`
+      <tr class="opp-row" data-idx="${idx}">
+        <td><span class="class-badge class-${esc(o.classification)}">${esc(classLabel(o.classification))}</span></td>
+        <td>
+          <div class="market-meta"><a class="market-link" href="${esc(o.contract_a.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(o.contract_a.platform)}: ${esc(o.contract_a.label)}</a></div>
+          <div class="market-meta"><a class="market-link" href="${esc(o.contract_b.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(o.contract_b.platform)}: ${esc(o.contract_b.label)}</a></div>
+        </td>
+        <td class="num">${money(o.capital_required_dollars)}</td>
+        <td class="num ${profitClass}">${money(o.guaranteed_profit_dollars)}</td>
+        <td class="num ${profitClass}">${pct(o.guaranteed_roi_pct)}</td>
+        <td class="num">${o.max_profitable_shares != null ? o.max_profitable_shares + " sh" : "-"}</td>
+        <td class="num">${pct(o.confidence * 100)}</td>
+        <td class="num">${secsAgo}s ago</td>
+      </tr>`];
+    if (openIndex === idx) {
+      rows.push(detailRowHtml(o));
+    }
+    return rows.join("");
+  }
+
+  function positionLine(p) {
+    const verb = p.side === "yes" ? "YES" : "NO";
+    return `Buy ${p.shares.toLocaleString()} ${esc(p.platform)} ${verb} @ avg ${p.avg_price_cents.toFixed(1)}&cent; (${money(p.cost_dollars)})`;
+  }
+
+  function payoffTableHtml(o) {
+    if (!o.payoff_matrix) return "";
+    const worst = Math.min(...o.payoff_matrix.map((r) => r.profit_dollars));
+    const rows = o.payoff_matrix.map((r) => `
+      <tr class="${r.profit_dollars === worst ? "worst-row" : ""}">
+        <td>${esc(r.description || r.state)}<div class="market-meta">${esc(r.source)}</div></td>
+        <td class="num">${money(r.payout_dollars)}</td>
+        <td class="num">${money(r.profit_dollars)}</td>
+      </tr>`).join("");
+    return `
+      <table class="payoff-table">
+        <thead><tr><th>Resolution state</th><th>Payout</th><th>Profit</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function detailRowHtml(o) {
+    if (o.classification === "rejected_match" || o.classification === "manual_verification_required") {
+      return `
+        <tr class="opp-detail"><td colspan="${COLUMNS.length}">
+          <div class="reject-note">${esc(o.reject_reason || "Not enough information to verify this pair automatically.")}</div>
+        </td></tr>`;
+    }
+    const pnlClass = o.guaranteed_profit_dollars > 0 ? "diff-pos" : (o.guaranteed_profit_dollars < 0 ? "diff-neg" : "");
+    const positions = (o.positions || []).map((p) => `<li>${positionLine(p)}</li>`).join("");
+    const holes = (o.holes || []).length
+      ? `<div class="holes-note">Hole detector found ${o.holes.length} additional resolution state(s) not in the original proposal: ${o.holes.map((h) => esc(h.description)).join("; ")}</div>`
+      : "";
+    return `
+      <tr class="opp-detail"><td colspan="${COLUMNS.length}">
+        <div class="detail-stat">
+          <div class="label">Worst-Case P&amp;L</div>
+          <div class="worst-case-pnl ${pnlClass}">${o.guaranteed_profit_dollars >= 0 ? "+" : ""}${money(o.guaranteed_profit_dollars)}</div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-stat"><div class="label">Guaranteed ROI</div><div class="value">${pct(o.guaranteed_roi_pct)}</div></div>
+          <div class="detail-stat"><div class="label">Capital Required</div><div class="value">${money(o.capital_required_dollars)}</div></div>
+          <div class="detail-stat"><div class="label">Max Executable Size</div><div class="value">${o.max_profitable_shares != null ? o.max_profitable_shares.toLocaleString() + " shares" : "n/a"}</div></div>
+          <div class="detail-stat"><div class="label">Rule Match Confidence</div><div class="value">${pct(o.confidence * 100)}</div></div>
+          <div class="detail-stat"><div class="label">Worst-Case State</div><div class="value">${esc(o.worst_case_state || "-")}</div></div>
+          <div class="detail-stat"><div class="label">Last Verified</div><div class="value">${new Date(o.verified_at).toLocaleTimeString()}</div></div>
+        </div>
+        <div class="label" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:6px;">Recommended positions</div>
+        <ul class="positions-list">${positions}</ul>
+        <div class="label" style="color:var(--muted);font-size:11px;text-transform:uppercase;margin-bottom:2px;">Full payoff matrix -- what happens to your money under every possible outcome</div>
+        ${payoffTableHtml(o)}
+        ${holes}
+      </td></tr>`;
+  }
+
+  function renderTable() {
+    const filter = classFilterEl.value;
+    const allowed = filter === "all" ? null : filter.split(",");
+    const filtered = lastOpps.filter((o) => !allowed || allowed.includes(o.classification));
+
+    if (!filtered.length) {
+      contentEl.innerHTML = '<div class="empty">No opportunities at this filter level. Try "Everything" or scan more candidates.</div>';
+      return;
+    }
+    const sorted = filtered.slice().sort((a, b) => {
+      const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = av < bv ? -1 : (av > bv ? 1 : 0);
+      return sortAsc ? cmp : -cmp;
+    });
+    const headHtml = COLUMNS.map((c) => {
+      const isSorted = c.key === sortKey;
+      return `<th data-key="${c.key}" class="${isSorted ? "sorted" : ""} ${isSorted && sortAsc ? "asc" : ""}">${esc(c.label)}</th>`;
+    }).join("");
+    const bodyHtml = sorted.map((o) => rowHtml(o, lastOpps.indexOf(o))).join("");
+    contentEl.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>${headHtml}</tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>`;
+    contentEl.querySelectorAll("thead th").forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.key;
+        if (sortKey === key) { sortAsc = !sortAsc; } else { sortKey = key; sortAsc = false; }
+        renderTable();
+      });
+    });
+    contentEl.querySelectorAll("tr.opp-row").forEach((tr) => {
+      tr.addEventListener("click", () => {
+        const idx = Number(tr.dataset.idx);
+        openIndex = openIndex === idx ? null : idx;
+        renderTable();
+      });
+    });
+  }
+
+  async function scan() {
+    refreshBtn.classList.add("loading");
+    refreshBtn.disabled = true;
+    bannerEl.classList.remove("show");
+    contentEl.innerHTML = '<div class="loading-state">Verifying candidates against the arbitrage engine (this calls the LLM several times per pair and can take a while)...</div>';
+    try {
+      const params = new URLSearchParams({
+        max_candidates: maxCandidatesEl.value || "10",
+        min_similarity: minSimEl.value || "0.6",
+        capital_limit_cents: String(Math.round((Number(capitalLimitEl.value) || 10000) * 100)),
+      });
+      const res = await fetch("/api/opportunities?" + params.toString(), { cache: "no-store" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || ("HTTP " + res.status));
+      if (payload.error) throw new Error(payload.error);
+      lastOpps = payload.opportunities || [];
+      openIndex = null;
+      const errNote = payload.errors && payload.errors.length ? ` · ${payload.errors.length} error(s)` : "";
+      bannerEl.textContent = `evaluated ${payload.evaluated} pair(s), skipped ${payload.skipped_no_liquidity_data} (no confirmed liquidity)${errNote}`;
+      bannerEl.classList.toggle("show", !!errNote);
+      renderTable();
+    } catch (err) {
+      bannerEl.textContent = "Scan failed: " + err.message;
+      bannerEl.classList.add("show");
+      contentEl.innerHTML = '<div class="empty">Scan failed -- see message above.</div>';
+    } finally {
+      refreshBtn.classList.remove("loading");
+      refreshBtn.disabled = false;
+    }
+  }
+
+  classFilterEl.addEventListener("change", renderTable);
+  refreshBtn.addEventListener("click", scan);
+})();
+</script>
+</body>
+</html>

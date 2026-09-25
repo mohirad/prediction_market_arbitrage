@@ -1,0 +1,13 @@
+[project]
+name = "arb"
+version = "0.1.0"
+description = "Cross-market divergence scanner and convergence-trade engine for Kalshi and Polymarket"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+where = ["src"]

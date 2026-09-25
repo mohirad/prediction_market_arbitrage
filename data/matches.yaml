@@ -1,0 +1,59 @@
+# Versioned matched-pair store (Phase 1). Only human_approved: true pairs
+# are tradable -- everything else is a candidate pending review.
+#
+# kalshi_yes_maps_to: "yes" means Kalshi's YES == Polymarket's YES
+# (aligned); "no" means Kalshi's YES == Polymarket's NO (inverted).
+# Kalshi is always the reference frame the polarity is expressed against.
+#
+# Both pairs below were hand-verified 2026-09-20 by reading each market's
+# actual resolution rules via live API calls (not guessed from titles) --
+# see the `notes` field on each for the verification and its caveats.
+version: 1
+pairs:
+  - pair_id: btc-above-100k-by-2026-12-31
+    category: crypto
+    kalshi:
+      ticker: KXBTCMAXY-26DEC31-99999.99
+      series_ticker: KXBTCMAXY
+      event_ticker: KXBTCMAXY-26DEC31
+    polymarket:
+      event_slug: what-price-will-bitcoin-hit-before-2027
+      market_slug: will-bitcoin-reach-100000-by-december-31-2026-571-361-361
+      yes_token_id: "56078938060096976448086754249497300447360333783952000147427828224794011030104"
+      no_token_id: "11291662904897713174667903388388696640643610556195928998276904135282270136756"
+    kalshi_yes_maps_to: "yes"
+    confidence: 0.9
+    human_approved: true
+    notes: >
+      Both markets resolve YES if BTC ever trades at/above $100,000
+      (Kalshi's strike is $99,999.99, i.e. "> $99,999.99" -- the standard
+      Kalshi convention of pricing one cent below a round-number threshold
+      to avoid an exact-tie edge case; economically identical to "reach
+      $100,000"). Both are American-style barriers (resolve early the
+      moment the threshold is crossed, not just a year-end snapshot) with
+      the same Dec 31, 2026 11:59PM ET cutoff.
+      CAVEAT (structural, not disqualifying but real): the two platforms
+      use DIFFERENT settlement price sources -- Kalshi uses the CF Bitcoin
+      Real-Time Index with trimmed-mean smoothing; Polymarket uses raw
+      Binance BTC/USDT 1-minute candle highs. A price spike that touches
+      $100k on Binance but not on the smoothed CF index (or vice versa)
+      could make the two markets resolve differently. This basis risk is
+      small for a threshold this far from current price but is not zero.
+
+  - pair_id: btc-above-110k-by-2026-12-31
+    category: crypto
+    kalshi:
+      ticker: KXBTCMAXY-26DEC31-109999.99
+      series_ticker: KXBTCMAXY
+      event_ticker: KXBTCMAXY-26DEC31
+    polymarket:
+      event_slug: what-price-will-bitcoin-hit-before-2027
+      market_slug: will-bitcoin-reach-110000-by-december-31-2026-658-339-969
+      yes_token_id: "74843373582432484858627201602003648342208168490128239235522790524493414154441"
+      no_token_id: "478527591373338225284037593163730441333267754562735300431025557171581810352"
+    kalshi_yes_maps_to: "yes"
+    confidence: 0.9
+    human_approved: true
+    notes: >
+      Same structure and same settlement-source caveat as the $100k pair
+      above, strike moved to $109,999.99 / $110,000.

@@ -1,0 +1,21 @@
+# Phase-0 watchlist: individual markets to snapshot every poll cycle.
+# Once Phase 1 (market matching) exists, data/matches.yaml (approved pairs
+# only) supersedes this for anything that's meant to be tradable -- but
+# the snapshot poller happily runs against this shape too, since a
+# snapshot's value (a traceable historical price/depth record) doesn't
+# depend on the pair being matched or approved yet.
+#
+# The pair below is a REAL, LIVE, WORKING example (both legs verified
+# 2026-09-20 against production) so `./run.sh` has something to actually
+# poll out of the box -- it is NOT a matched pair (Phase 1 doesn't exist
+# yet), just two arbitrary real markets that prove the plumbing works.
+# Copy to config/watchlist.yaml (gitignored) and replace with real
+# matched pairs once Phase 1 exists.
+pairs:
+  - pair_id: infra-smoke-test-not-a-real-match
+    kalshi:
+      ticker: KXHIGHNY-26SEP21-T73
+      series_ticker: KXHIGHNY
+    polymarket:
+      yes_token_id: "32338220190071351435772801779725302244575775216413325951443816017994629993401"
+      no_token_id: "25659310674993675562345759665114759892400026242514633218387667107987341231962"
